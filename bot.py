@@ -29,7 +29,7 @@ except RuntimeError:
     loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-# Pyrogram ക്라이언트 initialization
+# Pyrogram ക്ലയന്റ് initialization
 app = Client(
     "zee5_bot",
     api_id=API_ID,
@@ -182,7 +182,7 @@ async def handle_user_inputs(client, message):
         await message.reply_text("📥 Zee5 link detected! Please select your required format:", reply_markup=keyboard)
     else:
         if not state:
-            await message.reply_text("❌ Please send a valid JioHotstar link with `-n custom_name` or use `/settings`.")
+            await message.reply_text("❌ Please send a valid Zee5 link with `-n custom_name` or use `/settings`.")
 
 # ഡൗൺലോഡ് പ്രോസസ്സ് ഹാൻഡ്‌ലർ
 @app.on_callback_query(filters.regex("^dl\|"))
@@ -215,8 +215,9 @@ async def download_media(client, callback_query: CallbackQuery):
         }
     else:
         status_msg = await callback_query.message.edit_text(f"📥 Downloading {quality}p video... Please wait...")
+        # Zee5-ന് അനുയോജ്യമായ രീതിയിൽ ഫോർമാറ്റ് മാറ്റിയ ഭാഗം
         ydl_opts = {
-            'format': f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best',
+            'format': f'best[height<={quality}]/best',
             'outtmpl': 'downloads/%(title)s.%(ext)s',
             'progress_hooks': [get_progress_hook(client, status_msg, f"Downloading {quality}p Video")],
         }
