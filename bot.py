@@ -31,7 +31,7 @@ asyncio.set_event_loop(loop)
 
 # Pyrogram ക്라이언트 initialization
 app = Client(
-    "jiohotstar_bot",
+    "zee5_bot",
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN
@@ -99,8 +99,8 @@ def build_user_settings_keyboard(user_id):
 @app.on_message(filters.command("start") & filters.private)
 async def start_command(client, message):
     await message.reply_text(
-        "👋 Hello! Welcome to JioHotstar Downloader Bot.\n\n"
-        "Send any JioHotstar link with `-n custom_name` for renaming, and download as Audio or Video!",
+        "👋 Hello! Welcome to Zee5 Downloader Bot.\n\n"
+        "Send any Zee5 link with `-n custom_name` for renaming, and download as Audio or Video!",
         reply_markup=build_user_settings_keyboard(message.from_user.id)
     )
 
@@ -153,7 +153,7 @@ async def handle_user_inputs(client, message):
         return
 
     text = message.text.strip() if message.text else ""
-    if "hotstar.com" in text:
+    if "zee5.com" in text:
         parts = text.split("-n")
         url = parts[0].strip()
         custom_name = parts[1].strip() if len(parts) > 1 else None
@@ -179,7 +179,7 @@ async def handle_user_inputs(client, message):
                 InlineKeyboardButton("📹 1080p", callback_data="dl|video|1080")
             ]
         ])
-        await message.reply_text("📥 JioHotstar link detected! Please select your required format:", reply_markup=keyboard)
+        await message.reply_text("📥 Zee5 link detected! Please select your required format:", reply_markup=keyboard)
     else:
         if not state:
             await message.reply_text("❌ Please send a valid JioHotstar link with `-n custom_name` or use `/settings`.")
@@ -250,7 +250,7 @@ async def download_media(client, callback_query: CallbackQuery):
             await client.send_audio(
                 chat_id=callback_query.message.chat.id,
                 audio=filename,
-                caption="🎵 Here is your JioHotstar MP3 Audio!"
+                caption="🎵 Here is your Zee5 MP3 Audio!"
             )
         else:
             file_name = os.path.basename(filename)
@@ -266,7 +266,7 @@ async def download_media(client, callback_query: CallbackQuery):
                 file_name=file_name,
                 duration=duration,
                 thumb=thumb_path,
-                caption=f"📹 Here is your JioHotstar Video ({quality}p)!"
+                caption=f"📹 Here is your Zee5 Video ({quality}p)!"
             )
 
         await status_msg.delete()
