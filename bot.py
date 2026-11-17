@@ -49,17 +49,17 @@ def get_video_duration(file_path):
         pass
     return 0
 
-# പ്രോഗ്രസ് ബാർ (ബ്ലാക്ക് ബോക്സ് രീതിയിൽ നിറയുന്നത്) ഉണ്ടാക്കാൻ
+# പ്രോഗ്രസ് ബാർ ഉണ്ടാക്കാൻ
 def get_progress_bar(percentage):
     try:
-        pct = float(percentage.replace('%', '').strip())
+        pct = float(str(percentage).replace('%', '').strip())
     except:
         pct = 0.0
     completed = int(pct // 10)
     remaining = 10 - completed
     return "█" * completed + "░" * remaining
 
-# ലൈവ് പ്രോഗ്രസ് ബാർ ഹുക്ക് (ഡൗൺലോഡ് & അപ്‌ലോഡ് സമയത്ത് കാണിക്കാൻ)
+# ലൈവ് പ്രോഗ്രസ് ബാർ ഹുക്ക്
 def get_progress_hook(client, message, title="Downloading"):
     last_update_time = 0
     def progress_hook(d):
@@ -86,7 +86,7 @@ def get_progress_hook(client, message, title="Downloading"):
                 last_update_time = current_time
     return progress_hook
 
-# യൂസർ സെറ്റിംഗ്സ് കീബോർഡ് (തംബ്‌നെയിൽ മാനേജ്‌മെന്റ് ഓപ്ഷനുകൾ)
+# യൂസർ സെറ്റിംഗ്സ് കീബോർഡ്
 def build_user_settings_keyboard(user_id):
     has_thumb = "Yes ✅" if user_id in USER_THUMBNAILS else "No ❌"
     return InlineKeyboardMarkup([
@@ -104,7 +104,7 @@ async def start_command(client, message):
         reply_markup=build_user_settings_keyboard(message.from_user.id)
     )
 
-# /settings കമാൻഡ് (തംബ്‌നെയിൽ സെറ്റപ്പുകൾക്കായി)
+# /settings കമാൻഡ്
 @app.on_message(filters.command("settings") & filters.private)
 async def settings_command(client, message):
     await message.reply_text(
@@ -134,7 +134,10 @@ async def settings_callback(client, callback_query: CallbackQuery):
             await callback_query.answer("🗑️ Custom thumbnail removed successfully!", show_alert=True)
         else:
             await callback_query.answer("❌ No custom thumbnail to remove!", show_alert=True)
-        await callback_query.message.edit_reply_markup(reply_markup=build_user_settings_keyboard(user_id))
+        try:
+            await callback_query.message.edit_reply_markup(reply_markup=build_user_settings_keyboard(user_id))
+        except:
+            pass
     await callback_query.answer()
 
 # ഫോട്ടോയോ ലിങ്കോ ഇൻപുട്ട് എടുക്കുന്ന ഹാൻഡ്‌ലർ
@@ -160,7 +163,6 @@ async def handle_user_inputs(client, message):
 
         USER_URLS[user_id] = {"url": url, "custom_name": custom_name}
         
-        # എല്ലാ ക്വാളിറ്റികളും MP3 ഓപ്ഷനും ഉൾപ്പെടുത്തിയ കീബോർഡ്
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🎵 Extract MP3 Audio", callback_data="dl|audio|mp3")],
             [
@@ -188,7 +190,7 @@ async def handle_user_inputs(client, message):
 @app.on_callback_query(filters.regex("^dl\|"))
 async def download_media(client, callback_query: CallbackQuery):
     data_parts = callback_query.data.split("|")
-    media_type = data_parts[1] # video അല്ലെങ്കിൽ audio
+    media_type = data_parts[1] 
     quality = data_parts[2]
     
     user_id = callback_query.from_user.id
@@ -212,21 +214,22 @@ async def download_media(client, callback_query: CallbackQuery):
                 'preferredquality': '192',
             }],
             'progress_hooks': [get_progress_hook(client, status_msg, "Downloading Audio")],
+            'geo_bypass': True,
         }
     else:
         status_msg = await callback_query.message.edit_text(f"📥 Downloading {quality}p video... Please wait...")
-        # Zee5-ന് അനുയോജ്യമായ രീതിയിൽ ഫോർമാറ്റ് മാറ്റിയ ഭാഗം
         ydl_opts = {
             'format': f'best[height<={quality}]/best',
             'outtmpl': 'downloads/%(title)s.%(ext)s',
             'progress_hooks': [get_progress_hook(client, status_msg, f"Downloading {quality}p Video")],
+            'geo_bypass': True,
         }
 
-    # cookies.txt ഫയൽ ഉണ്ടെങ്കിൽ ഉപയോഗിക്കുന്നു
+    # cookies.txt ഫയൽ ഉണ്ടെങ്കിൽ അത് കോൺഫിഗറേഷനിൽ ചേർക്കുന്നു
     if os.path.exists("cookies.txt"):
         ydl_opts['cookiefile'] = "cookies.txt"
 
-    thumb_path = None
+    filename = None
     try:
         os.makedirs("downloads", exist_ok=True)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -236,7 +239,9 @@ async def download_media(client, callback_query: CallbackQuery):
             if media_type == "audio":
                 filename = os.path.splitext(filename)[0] + ".mp3"
 
-        # -n വഴി നൽകിയ കസ്റ്റം പേര് അനുസരിച്ച് ഫയൽ റീനെയിം ചെയ്യൽ
+        if not filename or not os.path.exists(filename):
+            raise Exception("Downloaded file not found!")
+
         dir_name, orig_filename = os.path.split(filename)
         name_part, ext = os.path.splitext(orig_filename)
         
@@ -247,19 +252,20 @@ async def download_media(client, callback_query: CallbackQuery):
 
         await status_msg.edit_text("📤 Uploading to Telegram...")
 
+        thumb_path = None
+        if user_id in USER_THUMBNAILS and os.path.exists(USER_THUMBNAILS[user_id]):
+            thumb_path = USER_THUMBNAILS[user_id]
+
         if media_type == "audio":
             await client.send_audio(
                 chat_id=callback_query.message.chat.id,
                 audio=filename,
+                thumb=thumb_path,
                 caption="🎵 Here is your Zee5 MP3 Audio!"
             )
         else:
             file_name = os.path.basename(filename)
             duration = get_video_duration(filename)
-            
-            # യൂസർ സെറ്റ് ചെയ്ത തംബ്‌നെയിൽ ഉണ്ടെങ്കിൽ അത് എടുക്കുന്നു
-            if user_id in USER_THUMBNAILS and os.path.exists(USER_THUMBNAILS[user_id]):
-                thumb_path = USER_THUMBNAILS[user_id]
 
             await client.send_video(
                 chat_id=callback_query.message.chat.id,
@@ -272,12 +278,14 @@ async def download_media(client, callback_query: CallbackQuery):
 
         await status_msg.delete()
         
-        # ഫയൽ ക്ലീനപ്പ്
         if os.path.exists(filename):
             os.remove(filename)
 
     except Exception as e:
-        await status_msg.edit_text(f"❌ Download failed: {str(e)}")
+        try:
+            await status_msg.edit_text(f"❌ Download failed: {str(e)}")
+        except:
+            pass
 
 if __name__ == "__main__":
     print("Bot is running...")
