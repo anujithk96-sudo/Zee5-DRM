@@ -12,22 +12,26 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQ
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# എൻവയോൺമെന്റ് വേരിയബിളുകൾ
-API_ID = os.environ.get("API_ID")
-API_HASH = os.environ.get("API_HASH")
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+# Required environment variables (configure these in your hosting platform)
+def load_config():
+    required = ("API_ID", "API_HASH", "BOT_TOKEN")
+    missing = [key for key in required if not os.environ.get(key)]
+    if missing:
+        raise RuntimeError(
+            "Missing required environment variables: " + ", ".join(missing)
+        )
+    try:
+        api_id = int(os.environ["API_ID"])
+    except ValueError as exc:
+        raise RuntimeError("API_ID must be an integer") from exc
+    return api_id, os.environ["API_HASH"], os.environ["BOT_TOKEN"]
+
+API_ID, API_HASH, BOT_TOKEN = load_config()
 
 # വലിയ URL-കളും യൂസർ ഡാറ്റകളും സേവ് ചെയ്തു വെക്കാനുള്ള ഡിക്ഷണറികൾ
 USER_URLS = {}
 USER_THUMBNAILS = {}
 USER_STATES = {}
-
-# ഇവന്റ് ലൂപ്പ് സെറ്റ് ചെയ്യുന്നു
-try:
-    loop = asyncio.get_event_loop()
-except RuntimeError:
-    loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
 
 # Pyrogram ക്ലയന്റ് initialization
 app = Client(
@@ -157,9 +161,23 @@ async def handle_user_inputs(client, message):
 
     text = message.text.strip() if message.text else ""
     if "zee5.com" in text:
-        parts = text.split("-n")
+        parts = text.split("-n", 1)
         url = parts[0].strip()
         custom_name = parts[1].strip() if len(parts) > 1 else None
+        if custom_name:
+            # Keep filenames safe across Linux/Windows filesystems.
+            custom_name = "".join(
+                ch for ch in custom_name if ch.isalnum() or ch in " ._-"
+            ).strip(" .")[:100] or None
+
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme not in ("http", "https") or not (
+            host == "zee5.com" or host.endswith(".zee5.com")
+        ):
+            await message.reply_text("❌ Please send a valid https://www.zee5.com link.")
+            return
 
         USER_URLS[user_id] = {"url": url, "custom_name": custom_name}
         
@@ -233,7 +251,9 @@ async def download_media(client, callback_query: CallbackQuery):
     try:
         os.makedirs("downloads", exist_ok=True)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            # yt-dlp is synchronous; run it in a worker thread so the bot
+            # can continue responding to other Telegram updates.
+            info = await asyncio.to_thread(ydl.extract_info, url, download=True)
             filename = ydl.prepare_filename(info)
             
             if media_type == "audio":
@@ -282,11 +302,15 @@ async def download_media(client, callback_query: CallbackQuery):
             os.remove(filename)
 
     except Exception as e:
+        logger.exception("Media processing failed for user %s", user_id)
         try:
-            await status_msg.edit_text(f"❌ Download failed: {str(e)}")
-        except:
+            await status_msg.edit_text(
+                "❌ Download failed. Check the bot logs and confirm the link is "
+                "accessible and not protected by DRM."
+            )
+        except Exception:
             pass
 
 if __name__ == "__main__":
-    print("Bot is running...")
+    logger.info("Starting Zee5 link bot...")
     app.run()
