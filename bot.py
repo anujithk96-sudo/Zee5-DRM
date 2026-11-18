@@ -3,6 +3,8 @@ import os
 import time
 import asyncio
 import yt_dlp
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
 from pyrogram import Client, filters
@@ -144,6 +146,25 @@ async def settings_callback(client, callback_query: CallbackQuery):
             pass
     await callback_query.answer()
 
+# Accept Zee5 canonical links and Zee5 OneLink short links.
+def normalize_zee5_url(raw_url):
+    raw_url = raw_url.strip().rstrip(".,)")
+    parsed = urlparse(raw_url)
+    host = (parsed.hostname or "").lower()
+    allowed = host == "zee5.com" or host.endswith(".zee5.com") or host == "zee5.onelink.me"
+    if parsed.scheme not in ("http", "https") or not allowed:
+        raise ValueError("Please send a valid Zee5 URL or zee5.onelink.me short link.")
+    if host == "zee5.onelink.me":
+        # Resolve only the official Zee5 short-link host; reject redirects elsewhere.
+        request = Request(raw_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(request, timeout=15) as response:
+            final_url = response.geturl()
+        final_host = (urlparse(final_url).hostname or "").lower()
+        if not (final_host == "zee5.com" or final_host.endswith(".zee5.com")):
+            raise ValueError("The short link did not redirect to an official Zee5 page.")
+        return final_url
+    return raw_url
+
 # ഫോട്ടോയോ ലിങ്കോ ഇൻപുട്ട് എടുക്കുന്ന ഹാൻഡ്‌ലർ
 @app.on_message(filters.private & ~filters.command(["start", "settings"]))
 async def handle_user_inputs(client, message):
@@ -160,10 +181,15 @@ async def handle_user_inputs(client, message):
         return
 
     text = message.text.strip() if message.text else ""
-    if "zee5.com" in text:
+    if "zee5.com" in text.lower() or "zee5.onelink.me" in text.lower():
         parts = text.split("-n", 1)
-        url = parts[0].strip()
+        raw_url = parts[0].strip()
         custom_name = parts[1].strip() if len(parts) > 1 else None
+        try:
+            url = normalize_zee5_url(raw_url)
+        except Exception as exc:
+            await message.reply_text(f"❌ Link error: {exc}")
+            return
         if custom_name:
             # Keep filenames safe across Linux/Windows filesystems.
             custom_name = "".join(
@@ -243,6 +269,19 @@ async def download_media(client, callback_query: CallbackQuery):
             'geo_bypass': True,
         }
 
+    # Reliability tuning for ordinary, non-DRM media supported by yt-dlp.
+    ydl_opts.update({
+        "noplaylist": True,
+        "retries": 5,
+        "fragment_retries": 5,
+        "file_access_retries": 3,
+        "socket_timeout": 30,
+        "continuedl": True,
+        "overwrites": False,
+        "concurrent_fragment_downloads": 4,
+        "ignoreerrors": False,
+    })
+
     # cookies.txt ഫയൽ ഉണ്ടെങ്കിൽ അത് കോൺഫിഗറേഷനിൽ ചേർക്കുന്നു
     if os.path.exists("cookies.txt"):
         ydl_opts['cookiefile'] = "cookies.txt"
@@ -304,10 +343,14 @@ async def download_media(client, callback_query: CallbackQuery):
     except Exception as e:
         logger.exception("Media processing failed for user %s", user_id)
         try:
-            await status_msg.edit_text(
-                "❌ Download failed. Check the bot logs and confirm the link is "
-                "accessible and not protected by DRM."
-            )
+            error_text = str(e).replace("<", "[").replace(">", "]")[:700]
+            lowered = error_text.lower()
+            if "drm" in lowered or "widevine" in lowered or "license" in lowered:
+                reason = ("This title appears to use DRM protection. This bot supports "
+                          "only media that is legitimately downloadable without bypassing DRM.")
+            else:
+                reason = f"{error_text or 'Unknown extractor error'}\nCheck hosting logs for the full traceback."
+            await status_msg.edit_text(f"❌ Download failed: {reason}")
         except Exception:
             pass
 
